@@ -20,11 +20,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -49,10 +51,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.constraintlayout.compose.ConstraintLayout
 import com.wavky.memorycard.R
+import com.wavky.memorycard.app.Config.LevelLimit
 import com.wavky.memorycard.app.Config.StartButton
 import com.wavky.memorycard.app.Config.Welcome
 import com.wavky.memorycard.app.common.res.Colors
@@ -63,6 +68,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
 
+const val DEV_MODE = false
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -89,6 +95,42 @@ fun Content() {
         headerFadeInDelay = 500,
         headerFadeInDuration = 1000
       ),
+      levelLimit = generateSequence(
+        LevelLimit(
+          level = 1,
+          isCountdown = false,
+          countdownMs = 13_000,
+          isCountMaxMiss = false,
+          maxMissCount = 4,
+          previewTimeMs = 5_000
+        )
+      ) { last ->
+        val minCountdownMs = 3000L
+        val nextCountdownMs = if (last.countdownMs < minCountdownMs) {
+          minCountdownMs
+        } else {
+          // 取整数秒
+          (last.countdownMs * 0.8).toLong() / 1000 * 1000
+        }
+        val nextMaxMissCount = when {
+          last.maxMissCount > 6 -> last.maxMissCount - 2
+          last.maxMissCount > 1 -> last.maxMissCount - 1
+          else -> 0
+        }
+        val nextPreviewTimeMs = when {
+          last.level < 6 -> last.previewTimeMs
+          last.previewTimeMs > 0 -> last.previewTimeMs - 500
+          else -> 0L
+        }
+        LevelLimit(
+          level = last.level + 1,
+          isCountdown = true,
+          countdownMs = if (nextCountdownMs < minCountdownMs) minCountdownMs else nextCountdownMs,
+          isCountMaxMiss = true,
+          maxMissCount = nextMaxMissCount,
+          previewTimeMs = nextPreviewTimeMs,
+        )
+      },
       startButton = StartButton(
         size = 200.dp,
         fontSize = 40.sp,
@@ -98,16 +140,26 @@ fun Content() {
         scaleDuration = 1000,
         scaleInitialDelay = 500,
       ),
-      endButton = Config.EndButton(
+      messageButton = Config.MessageButton(
         size = 200.dp,
-        fontSize = 40.sp,
+        fontSize = 35.sp,
         fadeDuration = 1000,
+      ),
+      goButton = Config.GoButton(
+        size = 200.dp,
+        fontSize = 80.sp,
+        showDuration = 500,
+        fadeDuration = 300,
       ),
       card = Config.PlayCard(
         height = 100.dp,
-        previewTime = 5000,
-        flipInterval = 300L,
-        flipDuration = 800L
+        firstTimeFlipInterval = 300L,
+        firstTimeFlipDuration = 800L,
+        flipInterval = 200L,
+        flipDuration = 500L,
+      ),
+      gameOver = Config.GameOver(
+        fadeDuration = 1500
       )
     )
   }
@@ -116,7 +168,9 @@ fun Content() {
   var showCards by remember { mutableStateOf(false) }
 
   var restartGame by remember { mutableIntStateOf(0) }
-  var level by remember { mutableIntStateOf(1) }
+  var gameOver by remember { mutableIntStateOf(0) }
+  val levelIterator by remember(gameOver) { mutableStateOf(config.levelLimit.iterator()) }
+  var level by remember(gameOver) { mutableStateOf(levelIterator.next()) }
 
   val flipToFrontList =
     remember(restartGame) { mutableStateListOf<Boolean>().apply { repeat(config.count) { add(false) } } }
@@ -138,11 +192,15 @@ fun Content() {
   var isContinueButtonVisible by remember { mutableStateOf(false) }
   // 重新开始按钮
   var isRestartButtonVisible by remember { mutableStateOf(false) }
+  var showGameOver by remember { mutableStateOf(false) }
 
   var startGame by remember { mutableStateOf(false) }
-  var showPause by remember { mutableStateOf(false) }
+  var showPauseMessage by remember { mutableStateOf(false) }
+  var showPreviewMessage by remember { mutableStateOf(false) }
+  var showGoMessage by remember { mutableStateOf(false) }
   var complete by remember { mutableStateOf(false) }
   var timeCount by remember(restartGame) { mutableIntStateOf(0) }
+  var timeText by remember(restartGame) { mutableStateOf("00:00") }
   var lastFlipIndex by remember(restartGame) { mutableIntStateOf(-1) }
   var miss by remember(restartGame) { mutableIntStateOf(0) }
 
@@ -162,7 +220,7 @@ fun Content() {
 
       AnimatedVisibility(showHeader, enter = fadeIn(tween(config.welcome.headerFadeInDuration))) {
         HeaderRow(
-          miss, timeCount, level, modifier = Modifier
+          miss, timeText, level, modifier = Modifier
             .background(Colors.HeaderBackground)
             .fillMaxWidth()
         )
@@ -190,7 +248,8 @@ fun Content() {
                       }
                     }
                   },
-                  initialDelay = i * config.card.flipInterval,
+                  initialDelay = i * config.card.firstTimeFlipInterval,
+                  initialFlipDuration = config.card.firstTimeFlipDuration,
                   flipDuration = config.card.flipDuration
                 )
 
@@ -249,10 +308,17 @@ fun Content() {
                       startGame = false
                       complete = true
                     }
+
+                    if (level.isCountMaxMiss && miss >= level.maxMissCount) {
+                      globalPlayCardClickable = false
+                      startGame = false
+                    }
                   }
                 }
+
+                // 游戏第一次加载时，显示开始按钮
                 LaunchedEffect(Unit) {
-                  delay(config.count * config.card.flipInterval + config.card.flipDuration)
+                  delay(config.count * config.card.firstTimeFlipInterval + config.card.firstTimeFlipDuration)
                   isStartButtonVisible = true
                 }
               }
@@ -283,9 +349,17 @@ fun Content() {
         delay(config.card.flipDuration)
 
         complete = false
-        level++
+        level = levelIterator.next()
         restartGame++
       }
+    }
+
+    GameOver(
+      config,
+      isVisible = showGameOver
+    ) {
+      // 结束当前局，准备下一局(level1)
+      isRestartButtonVisible = true
     }
 
     StartButton(
@@ -294,38 +368,73 @@ fun Content() {
       text = "RE\nSTART",
     ) {
       isRestartButtonVisible = false
+      showGameOver = false
 
       scope.launch {
         staticFlipList.fill(false)
         delay(config.card.flipDuration)
 
-        level = 1
+        gameOver++
         restartGame++
       }
     }
 
-    EndButton(
+    MessageButton(
       config = config,
-      isVisible = showPause,
+      isVisible = showPauseMessage,
       text = "GAME\nOVER?",
     ) {
-      showPause = false
+      showPauseMessage = false
       startGame = false
     }
+
+    MessageButton(
+      config = config,
+      isVisible = showPreviewMessage,
+      text = "PREVIEW",
+    ) {}
+
+    GoButton(
+      config = config,
+      isVisible = showGoMessage,
+    )
 
     // 重新开始游戏后预览卡牌：逐张翻开卡牌牌面，等待预览时间，逐张翻回背面，游戏正式开始
     LaunchedEffect(restartGame) {
       if (restartGame > 0) {
+
+        // 显示【预览】提示
+        showPreviewMessage = true
+        delay(config.messageButton.fadeDuration.toLong() + 500)
+        showPreviewMessage = false
+
         (1..config.count).forEachIndexed { i, _ ->
           delay(config.card.flipInterval)
           staticFlipList[i] = true
         }
-        delay(config.card.previewTime)
+
+        // 预览倒计时
+        var countDown = level.previewTimeMs
+        val step = 100L
+        while (countDown > 0) {
+          timeText = countDown.msToTimeText()
+          delay(step)
+          countDown -= step
+        }
+        timeText = 0L.msToTimeText()
+
         (1..config.count).forEachIndexed { i, _ ->
           delay(config.card.flipInterval)
           staticFlipList[i] = false
         }
         delay(config.card.flipDuration)
+
+        // 显示【开始翻牌】提示
+        showGoMessage = true
+        delay(config.goButton.fadeDuration.toLong() + config.goButton.showDuration)
+        showGoMessage = false
+        delay(config.goButton.fadeDuration.toLong())
+
         startGame = true
         globalPlayCardClickable = true
       }
@@ -335,13 +444,38 @@ fun Content() {
     LaunchedEffect(startGame) {
       if (restartGame == 0) return@LaunchedEffect
 
+      if (DEV_MODE) {
+        if (startGame) {
+          delay(1000)
+          staticFlipList.fill(true)
+          delay(config.card.flipDuration)
+          startGame = false
+          isContinueButtonVisible = true
+        }
+        return@LaunchedEffect
+      }
+
       when {
         // 游戏开始计时
         startGame -> {
-          while (true) {
-            delay(1000)
-            if (!showPause) {
-              timeCount++
+          if (level.isCountdown) {
+            var countDown = level.countdownMs
+            val step = 100L
+            while (countDown > 0) {
+              timeText = countDown.msToTimeText()
+              delay(step)
+              countDown -= step
+            }
+            timeText = 0L.msToTimeText()
+            startGame = false
+            globalPlayCardClickable = false
+          } else {
+            while (true) {
+              delay(1000)
+              if (!showPauseMessage) {
+                timeCount++
+                timeText = timeCount.secToTimeText()
+              }
             }
           }
         }
@@ -358,40 +492,34 @@ fun Content() {
               staticFlipList[i] = false
             }
           }
-          delay(config.card.flipDuration + config.card.flipInterval * (config.count - 2))
-          val flipToFront = async {
-            staticFlipList.forEachIndexed { i, _ ->
-              delay(config.card.flipInterval)
-              staticFlipList[i] = true
-            }
-          }
+          delay(config.card.flipDuration + config.card.flipInterval * config.count)
           flipToBack.await()
-          flipToFront.await()
+          staticFlipList.fill(true)
+          delay(config.card.flipDuration)
           isContinueButtonVisible = true
         }
 
         // 挑战失败
         else -> {
-          // 结束当前局，准备下一局(level1)
-          isRestartButtonVisible = true
+          showGameOver = true
         }
       }
     }
   }
 
   BackHandler(startGame) {
-    if (showPause) {
-      showPause = false
+    if (showPauseMessage) {
+      showPauseMessage = false
       globalPlayCardClickable = true
     } else {
-      showPause = true
+      showPauseMessage = true
       globalPlayCardClickable = false
     }
   }
 }
 
 @Composable
-fun StartButton(
+private fun StartButton(
   config: Config,
   isVisible: Boolean,
   text: String,
@@ -426,7 +554,12 @@ fun StartButton(
         modifier = Modifier.size(config.startButton.size),
         contentScale = ContentScale.FillBounds
       )
-      Text(text, fontSize = config.startButton.fontSize, fontFamily = Fonts.bb77sd, textAlign = TextAlign.Center)
+      Text(
+        text,
+        fontSize = config.startButton.fontSize,
+        fontFamily = Fonts.bb77sd,
+        textAlign = TextAlign.Center
+      )
     }
     DisposableEffect(Unit) {
       scaleTo = config.startButton.scaleEnd
@@ -439,13 +572,14 @@ fun StartButton(
 }
 
 @Composable
-fun EndButton(
+private fun MessageButton(
   config: Config,
   isVisible: Boolean,
   text: String,
+  fontSize: TextUnit = config.messageButton.fontSize,
   onClick: () -> Unit
 ) {
-  fun <T> spec() = tween<T>(config.endButton.fadeDuration)
+  fun <T> spec() = tween<T>(config.messageButton.fadeDuration)
   AnimatedVisibility(
     isVisible,
     enter = fadeIn(spec()) + scaleIn(spec()),
@@ -459,12 +593,87 @@ fun EndButton(
           }
         }) {
       Image(
-        painterResource(R.drawable.pause_bg),
+        painterResource(R.drawable.message_bg),
         contentDescription = null,
-        modifier = Modifier.size(config.startButton.size),
+        modifier = Modifier.size(config.messageButton.size),
         contentScale = ContentScale.FillBounds
       )
-      Text(text, fontSize = config.endButton.fontSize, fontFamily = Fonts.bb77sd, textAlign = TextAlign.Center)
+      Text(
+        text,
+        fontSize = fontSize,
+        fontFamily = Fonts.bb77sd,
+        textAlign = TextAlign.Center
+      )
+    }
+  }
+}
+
+@Composable
+private fun GoButton(
+  config: Config,
+  isVisible: Boolean,
+) {
+  fun <T> spec() = tween<T>(config.goButton.fadeDuration)
+  AnimatedVisibility(
+    isVisible,
+    enter = fadeIn(spec()) + scaleIn(spec()),
+    exit = fadeOut(spec()) + scaleOut(spec())
+  ) {
+    Box(
+      contentAlignment = Alignment.Center) {
+      Image(
+        painterResource(R.drawable.start_bg),
+        contentDescription = null,
+        modifier = Modifier.size(config.goButton.size),
+        contentScale = ContentScale.FillBounds
+      )
+      Text(
+        "GO!",
+        fontSize = config.goButton.fontSize,
+        fontFamily = Fonts.bb77sd,
+        textAlign = TextAlign.Center
+      )
+    }
+  }
+}
+
+@Composable
+private fun GameOver(
+  config: Config,
+  isVisible: Boolean,
+  onVisible: suspend () -> Unit
+) {
+  fun <T> spec() = tween<T>(config.gameOver.fadeDuration.toInt())
+  AnimatedVisibility(
+    isVisible,
+    enter = fadeIn(spec()),
+    exit = fadeOut(tween(0))
+  ) {
+    var toOffsetY by remember { mutableFloatStateOf(0f) }
+    val offsetY by animateFloatAsState(
+      targetValue = toOffsetY,
+      animationSpec = tween(config.gameOver.fadeDuration.toInt())
+    )
+
+    BoxWithConstraints(
+      contentAlignment = Alignment.Center,
+      modifier = Modifier
+        .background(Colors.GameOverBackground)
+        .fillMaxSize()) {
+      Image(
+        painterResource(R.drawable.game_over),
+        contentDescription = null,
+        modifier = Modifier.offset {
+          IntOffset(0, (maxHeight / 2 * offsetY).roundToPx())
+        },
+      )
+    }
+
+    LaunchedEffect (Unit) {
+      delay(config.gameOver.fadeDuration)
+      toOffsetY = -0.6f
+      delay(config.gameOver.fadeDuration)
+      onVisible()
     }
   }
 }
@@ -472,33 +681,64 @@ fun EndButton(
 @Composable
 private fun HeaderRow(
   miss: Int,
-  timeCount: Int,
-  level: Int,
+  timeText: String,
+  level: LevelLimit,
   modifier: Modifier = Modifier
 ) {
-  ConstraintLayout(modifier = modifier.padding(20.dp, 20.dp, 20.dp, 0.dp)) {
+  ConstraintLayout(modifier = modifier.padding(20.dp, 20.dp, 20.dp, 5.dp)) {
     val (missTextRef, timeTextRef, levelTextRef) = createRefs()
 
-    Text("MISS: $miss", fontSize = 20.sp, fontFamily = Fonts.bb77sd, modifier = Modifier.constrainAs(missTextRef) {
-      start.linkTo(parent.start)
-      baseline.linkTo(timeTextRef.baseline)
-    })
+    val missCount = String.format(Locale.getDefault(), "%02d/%02d", miss, level.maxMissCount)
+    val missText = if (level.isCountMaxMiss) {
+      "MISS\n$missCount"
+    } else {
+      "MISS\n$miss"
+    }
+    Text(
+      missText,
+      fontSize = 20.sp,
+      fontFamily = Fonts.bb77sd,
+      modifier = Modifier.constrainAs(missTextRef) {
+        start.linkTo(parent.start)
+        top.linkTo(timeTextRef.top)
+        bottom.linkTo(timeTextRef.bottom)
+      })
 
-    // timeCount 秒数转时间显示
-    val minute = timeCount / 60
-    val second = timeCount % 60
-    val timeText = String.format(Locale.getDefault(), "%02d:%02d", minute, second)
-    Text(timeText, fontSize = 40.sp, fontFamily = Fonts.bb77cd, modifier = Modifier.constrainAs(timeTextRef) {
-      top.linkTo(parent.top)
-      start.linkTo(parent.start)
-      end.linkTo(parent.end)
-    })
+    Text(
+      timeText,
+      fontSize = 40.sp,
+      fontFamily = Fonts.bb77cd,
+      modifier = Modifier.constrainAs(timeTextRef) {
+        top.linkTo(parent.top)
+        start.linkTo(parent.start)
+        end.linkTo(parent.end)
+      })
 
-    Text("LV: $level", fontSize = 20.sp, fontFamily = Fonts.bb77sd, modifier = Modifier.constrainAs(levelTextRef) {
-      end.linkTo(parent.end)
-      baseline.linkTo(timeTextRef.baseline)
-    })
+    Text(
+      "LV\n${level.level}",
+      fontSize = 20.sp,
+      fontFamily = Fonts.bb77sd,
+      textAlign = TextAlign.End,
+      modifier = Modifier.constrainAs(levelTextRef) {
+        end.linkTo(parent.end)
+        top.linkTo(timeTextRef.top)
+        bottom.linkTo(timeTextRef.bottom)
+      })
   }
+}
+
+// 毫秒数转时间显示
+private fun Long.msToTimeText(): String {
+  val second = this / 1000
+  val millisecond = this % 1000 / 10
+  return String.format(Locale.getDefault(), "%02d:%02d", second, millisecond)
+}
+
+// 秒数转时间显示
+private fun Int.secToTimeText(): String {
+  val minute = this / 60
+  val second = this % 60
+  return String.format(Locale.getDefault(), "%02d:%02d", minute, second)
 }
 
 @Preview(showBackground = true)
@@ -506,8 +746,8 @@ private fun HeaderRow(
 private fun PreviewHeaderRow() {
   HeaderRow(
     miss = 3,
-    timeCount = 65,
-    level = 1,
+    timeText = 65.secToTimeText(),
+    level = LevelLimit(1, false, 0, false, 0, 0),
     modifier = Modifier.fillMaxWidth()
   )
 }
@@ -516,34 +756,7 @@ private fun PreviewHeaderRow() {
 @Composable
 private fun PreviewStartButton() {
   StartButton(
-    config = Config(
-      row = 4,
-      column = 4,
-      startButton = StartButton(
-        size = 200.dp,
-        fontSize = 40.sp,
-        fadeDuration = 1000,
-        scaleStart = 0.9f,
-        scaleEnd = 1.1f,
-        scaleDuration = 1000,
-        scaleInitialDelay = 500,
-      ),
-      endButton = Config.EndButton(
-        size = 200.dp,
-        fontSize = 40.sp,
-        fadeDuration = 1000,
-      ),
-      welcome = Welcome(
-        headerFadeInDuration = 1000,
-        headerFadeInDelay = 1000
-      ),
-      card = Config.PlayCard(
-        height = 100.dp,
-        previewTime = 5000,
-        flipInterval = 300L,
-        flipDuration = 800L
-      )
-    ),
+    config = Config.preview,
     isVisible = true,
     text = "RE\nSTART",
     onClick = {}
@@ -552,40 +765,22 @@ private fun PreviewStartButton() {
 
 @Preview(showBackground = true)
 @Composable
-private fun PreviewEndButton() {
-  EndButton(
-    config = Config(
-      row = 4,
-      column = 4,
-      startButton = StartButton(
-        size = 200.dp,
-        fontSize = 40.sp,
-        fadeDuration = 1000,
-        scaleStart = 0.9f,
-        scaleEnd = 1.1f,
-        scaleDuration = 1000,
-        scaleInitialDelay = 500,
-      ),
-      endButton = Config.EndButton(
-        size = 200.dp,
-        fontSize = 40.sp,
-        fadeDuration = 1000,
-      ),
-      welcome = Welcome(
-        headerFadeInDuration = 1000,
-        headerFadeInDelay = 1000
-      ),
-      card = Config.PlayCard(
-        height = 100.dp,
-        previewTime = 5000,
-        flipInterval = 300L,
-        flipDuration = 800L
-      )
-    ),
+private fun PreviewMessageButton() {
+  MessageButton(
+    config = Config.preview,
     isVisible = true,
     text = "GAME\nOVER?",
     onClick = {}
   )
+}
+
+@Preview
+@Composable
+private fun PreviewGameOver() {
+  GameOver(
+    config = Config.preview,
+    isVisible = true
+  ) { }
 }
 
 @Preview(showBackground = true)

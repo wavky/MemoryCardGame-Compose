@@ -52,6 +52,7 @@ fun PlayCard(
   height: Dp,
   modifier: Modifier = Modifier,
   initialDelay: Long = 0,
+  initialFlipDuration: Long = 1000,
   flipDuration: Long = 1000,
 ) {
   val camera by remember { mutableStateOf(Camera()) }
@@ -109,11 +110,11 @@ fun PlayCard(
     }
   }
   LaunchedEffect(flipToFront) {
+    val halfDuration = if (isFirstTime) initialFlipDuration.toInt() / 2 else flipDuration.toInt() / 2
     if (isFirstTime) {
       isFirstTime = false
       delay(initialDelay)
     }
-    val halfDuration = flipDuration.toInt() / 2
     fun <T> upperTween(): TweenSpec<T> = tween(halfDuration, easing = FastOutLinearInEasing)
     fun <T> lowerTween(): TweenSpec<T> = tween(halfDuration, easing = LinearOutSlowInEasing)
     val upperRotate = async {
