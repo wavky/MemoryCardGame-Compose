@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,12 +47,16 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.constraintlayout.compose.ConstraintLayout
 import com.wavky.memorycard.R
 import com.wavky.memorycard.app.Config.StartButton
+import com.wavky.memorycard.app.Config.Welcome
+import com.wavky.memorycard.app.common.res.Colors
+import com.wavky.memorycard.app.common.res.Fonts
 import com.wavky.memorycard.app.ui.PlayCard
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -80,9 +85,13 @@ fun Content() {
     Config(
       row = 4,
       column = 4,
+      welcome = Welcome(
+        headerFadeInDelay = 500,
+        headerFadeInDuration = 1000
+      ),
       startButton = StartButton(
         size = 200.dp,
-        fontSize = 50.sp,
+        fontSize = 40.sp,
         fadeDuration = 1000,
         scaleStart = 0.9f,
         scaleEnd = 1.1f,
@@ -91,7 +100,7 @@ fun Content() {
       ),
       endButton = Config.EndButton(
         size = 200.dp,
-        fontSize = 45.sp,
+        fontSize = 40.sp,
         fadeDuration = 1000,
       ),
       card = Config.PlayCard(
@@ -102,6 +111,9 @@ fun Content() {
       )
     )
   }
+
+  var showHeader by remember { mutableStateOf(false) }
+  var showCards by remember { mutableStateOf(false) }
 
   var restartGame by remember { mutableIntStateOf(0) }
   var level by remember { mutableIntStateOf(1) }
@@ -141,93 +153,108 @@ fun Content() {
         .statusBarsPadding()
         .navigationBarsPadding(), horizontalAlignment = Alignment.CenterHorizontally
     ) {
-      HeaderRow(miss, timeCount, level, modifier = Modifier.fillMaxWidth())
-      Column(Modifier.weight(1f), verticalArrangement = Arrangement.SpaceEvenly) {
-        (1..config.row).mapIndexed { y, _ ->
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            modifier = Modifier.fillMaxWidth(),
-          ) {
-            (1..config.column).mapIndexed { x, _ ->
-              val i = y * config.column + x
-              PlayCard(
-                element = staticElementList[i],
-                cardFace = R.drawable.cardface,
-                cardBack = R.drawable.cardback,
-                flipToFront = staticFlipList[i],
-                height = config.card.height,
-                modifier = Modifier.pointerInput(Unit) {
-                  detectTapGestures {
-                    if (globalPlayCardClickable && staticIsPlayCardClickableList[i]) {
-                      staticClickList[i]++
-                    }
-                  }
-                },
-                initialDelay = i * config.card.flipInterval,
-                flipDuration = config.card.flipDuration
-              )
+      LaunchedEffect(Unit) {
+        delay(config.welcome.headerFadeInDelay.toLong())
+        showHeader = true
+        delay(config.welcome.headerFadeInDuration.toLong())
+        showCards = true
+      }
 
-              // 点击卡牌：翻转卡牌牌面，判断卡牌是否相同
-              LaunchedEffect(staticClickList[i]) {
-                // 避免第一次加载（初始化）时触发运行
-                if (staticClickList[i] > 0) {
-                  staticFlipList[i] = !staticFlipList[i]
-
-                  // 判断卡片图案是否相同
-                  // 同一张卡牌
-                  if (lastFlipIndex == i) {
-                    lastFlipIndex = -1
-                    return@LaunchedEffect
-                  }
-                  // 不同卡牌
-                  val cacheLastFlipIndex = lastFlipIndex
-                  when {
-                    // 上一张牌已经翻开
-                    cacheLastFlipIndex >= 0 -> {
-                      // 卡牌牌面相同
-                      if (staticElementList[cacheLastFlipIndex] == staticElementList[i]) {
-                        // 设置为不可继续点击
-                        staticIsPlayCardClickableList[cacheLastFlipIndex] = false
-                        staticIsPlayCardClickableList[i] = false
-                        // 确保卡牌牌面朝上
-                        staticFlipList[i] = true
-                        staticFlipList[cacheLastFlipIndex] = true
-                      } else {
-                        // 卡牌牌面不同，等待当前卡牌牌面显示完毕后再翻转回去
-                        // 等待期间临时禁用全局点击
-                        globalPlayCardClickable = false
-                        delay(config.card.flipDuration)
-                        miss++
-                        staticFlipList[cacheLastFlipIndex] = false
-                        staticFlipList[i] = false
-                        globalPlayCardClickable = true
+      AnimatedVisibility(showHeader, enter = fadeIn(tween(config.welcome.headerFadeInDuration))) {
+        HeaderRow(
+          miss, timeCount, level, modifier = Modifier
+            .background(Colors.HeaderBackground)
+            .fillMaxWidth()
+        )
+      }
+      if (showCards) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.SpaceEvenly) {
+          (1..config.row).mapIndexed { y, _ ->
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceEvenly,
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              (1..config.column).mapIndexed { x, _ ->
+                val i = y * config.column + x
+                PlayCard(
+                  element = staticElementList[i],
+                  cardFace = R.drawable.cardface,
+                  cardBack = R.drawable.cardback,
+                  flipToFront = staticFlipList[i],
+                  height = config.card.height,
+                  modifier = Modifier.pointerInput(Unit) {
+                    detectTapGestures {
+                      if (globalPlayCardClickable && staticIsPlayCardClickableList[i]) {
+                        staticClickList[i]++
                       }
+                    }
+                  },
+                  initialDelay = i * config.card.flipInterval,
+                  flipDuration = config.card.flipDuration
+                )
+
+                // 点击卡牌：翻转卡牌牌面，判断卡牌是否相同
+                LaunchedEffect(staticClickList[i]) {
+                  // 避免第一次加载（初始化）时触发运行
+                  if (staticClickList[i] > 0) {
+                    staticFlipList[i] = !staticFlipList[i]
+
+                    // 判断卡片图案是否相同
+                    // 同一张卡牌
+                    if (lastFlipIndex == i) {
                       lastFlipIndex = -1
+                      return@LaunchedEffect
+                    }
+                    // 不同卡牌
+                    val cacheLastFlipIndex = lastFlipIndex
+                    when {
+                      // 上一张牌已经翻开
+                      cacheLastFlipIndex >= 0 -> {
+                        // 卡牌牌面相同
+                        if (staticElementList[cacheLastFlipIndex] == staticElementList[i]) {
+                          // 设置为不可继续点击
+                          staticIsPlayCardClickableList[cacheLastFlipIndex] = false
+                          staticIsPlayCardClickableList[i] = false
+                          // 确保卡牌牌面朝上
+                          staticFlipList[i] = true
+                          staticFlipList[cacheLastFlipIndex] = true
+                        } else {
+                          // 卡牌牌面不同，等待当前卡牌牌面显示完毕后再翻转回去
+                          // 等待期间临时禁用全局点击
+                          globalPlayCardClickable = false
+                          delay(config.card.flipDuration)
+                          miss++
+                          staticFlipList[cacheLastFlipIndex] = false
+                          staticFlipList[i] = false
+                          globalPlayCardClickable = true
+                        }
+                        lastFlipIndex = -1
+                      }
+
+                      staticFlipList[i] -> {
+                        // lastFlipIndex == -1 并且当前牌为正面时，设置为当前牌序号
+                        lastFlipIndex = i
+                      }
+
+                      else -> {
+                        // lastFlipIndex == -1 并且当前牌为背面（事实上不存在）
+                        lastFlipIndex = -1
+                      }
                     }
 
-                    staticFlipList[i] -> {
-                      // lastFlipIndex == -1 并且当前牌为正面时，设置为当前牌序号
-                      lastFlipIndex = i
+                    // 判断游戏是否结束
+                    if (staticFlipList.all { it }) {
+                      globalPlayCardClickable = false
+                      startGame = false
+                      complete = true
                     }
-
-                    else -> {
-                      // lastFlipIndex == -1 并且当前牌为背面（事实上不存在）
-                      lastFlipIndex = -1
-                    }
-                  }
-
-                  // 判断游戏是否结束
-                  if (staticFlipList.all { it }) {
-                    globalPlayCardClickable = false
-                    startGame = false
-                    complete = true
                   }
                 }
-              }
-              LaunchedEffect(Unit) {
-                delay(config.count * config.card.flipInterval + config.card.flipDuration)
-                isStartButtonVisible = true
+                LaunchedEffect(Unit) {
+                  delay(config.count * config.card.flipInterval + config.card.flipDuration)
+                  isStartButtonVisible = true
+                }
               }
             }
           }
@@ -238,7 +265,7 @@ fun Content() {
     StartButton(
       config = config,
       isVisible = isStartButtonVisible,
-      text = "開始",
+      text = "START",
     ) {
       isStartButtonVisible = false
       restartGame++
@@ -248,7 +275,7 @@ fun Content() {
     StartButton(
       config = config,
       isVisible = isContinueButtonVisible,
-      text = "晉級",
+      text = "LEVEL\nUP",
     ) {
       isContinueButtonVisible = false
       scope.launch {
@@ -264,7 +291,7 @@ fun Content() {
     StartButton(
       config = config,
       isVisible = isRestartButtonVisible,
-      text = "重新\n開始",
+      text = "RE\nSTART",
     ) {
       isRestartButtonVisible = false
 
@@ -280,7 +307,7 @@ fun Content() {
     EndButton(
       config = config,
       isVisible = showPause,
-      text = "結束?",
+      text = "GAME\nOVER?",
     ) {
       showPause = false
       startGame = false
@@ -399,7 +426,7 @@ fun StartButton(
         modifier = Modifier.size(config.startButton.size),
         contentScale = ContentScale.FillBounds
       )
-      Text(text, fontSize = config.startButton.fontSize)
+      Text(text, fontSize = config.startButton.fontSize, fontFamily = Fonts.bb77sd, textAlign = TextAlign.Center)
     }
     DisposableEffect(Unit) {
       scaleTo = config.startButton.scaleEnd
@@ -437,7 +464,7 @@ fun EndButton(
         modifier = Modifier.size(config.startButton.size),
         contentScale = ContentScale.FillBounds
       )
-      Text(text, fontSize = config.startButton.fontSize)
+      Text(text, fontSize = config.endButton.fontSize, fontFamily = Fonts.bb77sd, textAlign = TextAlign.Center)
     }
   }
 }
@@ -452,7 +479,7 @@ private fun HeaderRow(
   ConstraintLayout(modifier = modifier.padding(20.dp, 20.dp, 20.dp, 0.dp)) {
     val (missTextRef, timeTextRef, levelTextRef) = createRefs()
 
-    Text("失手: $miss", fontSize = 20.sp, modifier = Modifier.constrainAs(missTextRef) {
+    Text("MISS: $miss", fontSize = 20.sp, fontFamily = Fonts.bb77sd, modifier = Modifier.constrainAs(missTextRef) {
       start.linkTo(parent.start)
       baseline.linkTo(timeTextRef.baseline)
     })
@@ -461,13 +488,13 @@ private fun HeaderRow(
     val minute = timeCount / 60
     val second = timeCount % 60
     val timeText = String.format(Locale.getDefault(), "%02d:%02d", minute, second)
-    Text(timeText, fontSize = 40.sp, modifier = Modifier.constrainAs(timeTextRef) {
+    Text(timeText, fontSize = 40.sp, fontFamily = Fonts.bb77cd, modifier = Modifier.constrainAs(timeTextRef) {
       top.linkTo(parent.top)
       start.linkTo(parent.start)
       end.linkTo(parent.end)
     })
 
-    Text("Level: $level", fontSize = 20.sp, modifier = Modifier.constrainAs(levelTextRef) {
+    Text("LV: $level", fontSize = 20.sp, fontFamily = Fonts.bb77sd, modifier = Modifier.constrainAs(levelTextRef) {
       end.linkTo(parent.end)
       baseline.linkTo(timeTextRef.baseline)
     })
@@ -494,7 +521,7 @@ private fun PreviewStartButton() {
       column = 4,
       startButton = StartButton(
         size = 200.dp,
-        fontSize = 50.sp,
+        fontSize = 40.sp,
         fadeDuration = 1000,
         scaleStart = 0.9f,
         scaleEnd = 1.1f,
@@ -503,8 +530,12 @@ private fun PreviewStartButton() {
       ),
       endButton = Config.EndButton(
         size = 200.dp,
-        fontSize = 50.sp,
+        fontSize = 40.sp,
         fadeDuration = 1000,
+      ),
+      welcome = Welcome(
+        headerFadeInDuration = 1000,
+        headerFadeInDelay = 1000
       ),
       card = Config.PlayCard(
         height = 100.dp,
@@ -514,7 +545,7 @@ private fun PreviewStartButton() {
       )
     ),
     isVisible = true,
-    text = "開始",
+    text = "RE\nSTART",
     onClick = {}
   )
 }
@@ -528,7 +559,7 @@ private fun PreviewEndButton() {
       column = 4,
       startButton = StartButton(
         size = 200.dp,
-        fontSize = 45.sp,
+        fontSize = 40.sp,
         fadeDuration = 1000,
         scaleStart = 0.9f,
         scaleEnd = 1.1f,
@@ -537,8 +568,12 @@ private fun PreviewEndButton() {
       ),
       endButton = Config.EndButton(
         size = 200.dp,
-        fontSize = 50.sp,
+        fontSize = 40.sp,
         fadeDuration = 1000,
+      ),
+      welcome = Welcome(
+        headerFadeInDuration = 1000,
+        headerFadeInDelay = 1000
       ),
       card = Config.PlayCard(
         height = 100.dp,
@@ -548,7 +583,7 @@ private fun PreviewEndButton() {
       )
     ),
     isVisible = true,
-    text = "結束?",
+    text = "GAME\nOVER?",
     onClick = {}
   )
 }

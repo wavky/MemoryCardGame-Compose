@@ -6,11 +6,17 @@ import androidx.compose.ui.unit.TextUnit
 data class Config(
   val row: Int,
   val column: Int,
+  val welcome: Welcome,
   val startButton: StartButton,
   val endButton: EndButton,
   val card: PlayCard
 ) {
   val count = row * column
+
+  data class Welcome(
+    val headerFadeInDelay: Int,
+    val headerFadeInDuration: Int,
+  )
 
   data class StartButton(
     val size: Dp,
