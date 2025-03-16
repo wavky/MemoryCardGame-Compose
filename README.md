@@ -6,9 +6,4 @@
 
 App应用图标、首页图不可商用。
 
-<div style="display: flex; justify-content: center;">
-  <video controls style="width: 30%; height: 30%;">
-    <source src="https://wavky.top/MemoryCard/preview.mp4" type="video/mp4">
-    您的浏览器不支持 video 标签。
-  </video>
-</div>
+https://github.com/user-attachments/assets/084da15b-9c51-4e05-8f26-940d0a4991c0
