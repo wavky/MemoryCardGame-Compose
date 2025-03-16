@@ -99,9 +99,9 @@ fun Content() {
         LevelLimit(
           level = 1,
           isCountdown = false,
-          countdownMs = 13_000,
+          countdownMs = 75_000,
           isCountMaxMiss = false,
-          maxMissCount = 4,
+          maxMissCount = 22,
           previewTimeMs = 5_000
         )
       ) { last ->
