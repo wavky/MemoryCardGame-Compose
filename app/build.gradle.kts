@@ -10,7 +10,7 @@ android {
 
   defaultConfig {
     applicationId = "com.wavky.memorycard"
-    minSdk = 28
+    minSdk = 25
     targetSdk = 35
     versionCode = 1
     versionName = "1.0"

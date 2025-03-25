@@ -1,5 +1,6 @@
 package com.wavky.memorycard.app.ui
 
+import android.graphics.BitmapFactory
 import android.graphics.Camera
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
@@ -30,9 +31,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -46,8 +51,8 @@ import kotlinx.coroutines.delay
 @Composable
 fun PlayCard(
   element: Element,
-  @DrawableRes cardFace: Int,
-  @DrawableRes cardBack: Int,
+  cardFace: ImageBitmap,
+  cardBack: ImageBitmap,
   flipToFront: Boolean,
   height: Dp,
   modifier: Modifier = Modifier,
@@ -88,7 +93,7 @@ fun PlayCard(
     if (showCardFace) {
       Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Image(
-          painterResource(cardFace),
+          cardFace,
           contentDescription = null,
           modifier = Modifier.fillMaxSize(),
           contentScale = ContentScale.Crop
@@ -102,7 +107,7 @@ fun PlayCard(
       }
     } else {
       Image(
-        painterResource(cardBack),
+        cardBack,
         contentDescription = null,
         modifier = Modifier.fillMaxSize(),
         contentScale = ContentScale.FillBounds
@@ -152,6 +157,15 @@ fun PlayCard(
   }
 }
 
+@Composable
+fun rememberSharedBitmap(resId: Int): ImageBitmap {
+  val context = LocalContext.current
+  return remember(resId) {
+    val bitmap = BitmapFactory.decodeResource(context.resources, resId)
+    bitmap.asImageBitmap()
+  }
+}
+
 @Preview(showBackground = true)
 @Composable
 private fun PreviewPlayCard() {
@@ -163,10 +177,12 @@ private fun PreviewPlayCard() {
     modifier = Modifier.fillMaxSize(),
   ) {
     var flipToFront by remember { mutableStateOf(false) }
+    val cardFace = rememberSharedBitmap(R.drawable.cardface)
+    val cardBack = rememberSharedBitmap(R.drawable.cardback)
     PlayCard(
       element = element,
-      cardFace = R.drawable.cardface,
-      cardBack = R.drawable.cardback,
+      cardFace = cardFace,
+      cardBack = cardBack,
       flipToFront = flipToFront,
       height = 100.dp,
       modifier = Modifier.clickable { click++ }

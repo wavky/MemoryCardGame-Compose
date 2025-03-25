@@ -63,6 +63,7 @@ import com.wavky.memorycard.app.Config.Welcome
 import com.wavky.memorycard.app.common.res.Colors
 import com.wavky.memorycard.app.common.res.Fonts
 import com.wavky.memorycard.app.ui.PlayCard
+import com.wavky.memorycard.app.ui.rememberSharedBitmap
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -164,6 +165,9 @@ fun Content() {
     )
   }
 
+  val cardFace = rememberSharedBitmap(R.drawable.cardface)
+  val cardBack = rememberSharedBitmap(R.drawable.cardback)
+
   var showHeader by remember { mutableStateOf(false) }
   var showCards by remember { mutableStateOf(false) }
 
@@ -237,8 +241,8 @@ fun Content() {
                 val i = y * config.column + x
                 PlayCard(
                   element = staticElementList[i],
-                  cardFace = R.drawable.cardface,
-                  cardBack = R.drawable.cardback,
+                  cardFace = cardFace,
+                  cardBack = cardBack,
                   flipToFront = staticFlipList[i],
                   height = config.card.height,
                   modifier = Modifier.pointerInput(Unit) {
